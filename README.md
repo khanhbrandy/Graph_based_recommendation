@@ -1,5 +1,11 @@
 # Simplified version of a graph-based recommender
 
+"""
+Creator: khanh.brandy
+Created on 2020-06-30
+
+"""
+
 This source code works well with Neo4j 4.2 and is distributed in the hope that it will be useful, but WITHOUT ANY WARRANTY.
 
 **V1.1 DESCRIPTION**
