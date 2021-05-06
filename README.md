@@ -1,6 +1,7 @@
 # Simplified version of a graph-based recommender
 
 """
+
 Creator: khanh.brandy
 Created on 2020-06-30
 
