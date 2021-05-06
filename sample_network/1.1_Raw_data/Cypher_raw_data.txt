@@ -1,0 +1,25 @@
+match (u1:Tran2006B)-[t:Tran2006B]-(u2:Tran2006B)
+where t.tran_type <> "adjustment"
+return 
+u1.agent_id as u1_agentid 
+, u1.reference as u1_reference 
+, u1.in_degree_Tran2006 as u1_in_degree
+, u1.out_degree_Tran2006 as u1_out_degree
+, u1.pagerank_Tran2006 as u1_page_rank
+, u1.community_lv_Tran2006 as u1_community_id
+, u1.category as u1_category
+, u1.status as u1_status
+, u1.is_org as u1_user_type
+, t.tranid as tranid
+, t.amount as amount
+, t.tran_type as tran_type 
+, u2.agent_id as u2_agentid
+, u2.reference as u2_reference
+, u2.in_degree_Tran2006 as u2_in_degree
+, u2.out_degree_Tran2006 as u2_out_degree
+, u2.pagerank_Tran2006 as u2_page_rank
+, u2.community_lv_Tran2006 as u2_community_id
+, u2.category as u2_category
+, u2.status as u2_status
+, u2.is_org as u2_user_type
+limit 200000

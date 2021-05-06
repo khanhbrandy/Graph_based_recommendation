@@ -1,0 +1,157 @@
+=================================
+======= V4 DESCRIPTION ==========
+=================================
+
+- Inherit graph structure, node properties (es SIMILAR) and relationship properties (es TOTAL_AMT) from v2
+- Try using node embedded vector to calculate COSINE similarity score along with (or instead of) using item-based vectors
+
+//=================================
+//CREATE (temporary) GRAPH
+//=================================
+CALL gds.graph.create('recommendv4', 'Agent', 'TRANSACTION', {
+        nodeProperties: ['in_degree', 'out_degree','page_rank']
+    })
+YIELD graphName, nodeCount, relationshipCount
+
+
+//=================================
+//NODE EMBEDDING
+//=================================
+
+CALL gds.alpha.graphSage.write(
+  'recommendv4',
+  {
+    writeProperty: 'embedding',
+    nodePropertyNames: ['in_degree', 'out_degree', 'page_rank'],
+    aggregator: 'mean',
+    activationFunction: 'sigmoid',
+    embeddingSize: 15,
+    sampleSizes: [25, 1000],
+    batchSize: 1000,
+    epochs: 100,
+    degreeAsProperty: true
+  }
+  
+) YIELD startLoss, epochLosses
+
+
+=================================
+# REMOVE NODE PROPERTY (embedding)
+=================================
+MATCH (n:Agent)
+REMOVE n.embedding
+RETURN n.agentid, n.embedding
+
+
+
+//=================================
+//== CREATE TOTAL_AMT
+//=================================
+
+MATCH (u:Agent),(p:Product)
+where EXISTS( (u)-[:TRANSACTION {tran_type: p.product}]->() )
+CREATE (u)-[r:TOTAL_AMT]->(p)
+RETURN type(r)
+
+
+//=================================
+//UPDATE TOTAL_AMT
+//=================================
+MATCH (u:Agent)-[t:TRANSACTION]-()
+with u.agentid as id, t.tran_type as prod, sum(t.amount) as TPV
+match (u:Agent)-[r:TOTAL_AMT]->(p:Product) where u.agentid = id and p.product = prod
+set r.amount = TPV
+return u.agentid , r.amount, p.product
+
+
+
+
+//=================================
+//CALCUALTE PEARSON SIMILARITY USING NEO4J PROCEDURE
+//=================================
+
+MATCH (u:Agent), (p:Product)
+OPTIONAL MATCH (u)-[r:TOTAL_AMT]->(p) where p.product <> "adjustment"
+WITH {item:id(u), weights: collect(coalesce(r.amount, 0))} AS userData
+WITH collect(userData) AS data
+CALL gds.alpha.similarity.pearson.write({
+ data: data,
+ topK: 0,
+ similarityCutoff: -1})
+YIELD nodes, similarityPairs, writeRelationshipType, writeProperty, min, max, mean, stdDev, p25, p50, p75, p90, p95, p99, p999, p100
+RETURN nodes, similarityPairs, writeRelationshipType, writeProperty, min, max, mean, p95
+
+
+=================================
+# DELETE SIMILAR
+=================================
+
+MATCH (u1:Agent)-[r:SIMILAR]->(u2:Agent)
+DELETE r
+
+
+//=================================
+//CREATE SIMILAR_EBD (use embedding as Vector)
+//=================================
+
+MATCH (u1:Agent),(u2:Agent)
+where EXISTS( (u1)-[:SIMILAR]->(u2) )
+CREATE (u1)-[r:SIMILAR_EBD]->(u2)
+RETURN type(r)
+
+
+//=================================
+// UPDATE SIMILAR_EBD 
+//=================================
+//Cosine similarity 
+match (u1:Agent)-[r:SIMILAR_EBD]-(u2:Agent)
+set r.score = gds.alpha.similarity.cosine(u1.embedding, u2.embedding)
+return u1.agentid , r.score, u2.agentid
+
+
+//Pearson similarity
+match (u1:Agent)-[r:SIMILAR_EBD]-(u2:Agent)
+with u1.agentid as u1_agentid, r, 
+[u1.embedding[0], u1.embedding[1], u1.embedding[2], u1.embedding[3], u1.embedding[4], u1.embedding[5], 
+u1.embedding[6], u1.embedding[7], u1.embedding[8], u1.embedding[9], u1.embedding[10],
+u1.embedding[11], u1.embedding[12], u1.embedding[13], u1.embedding[14]] as u1_embedding, 
+u2.agentid as u2_agentid, 
+[u2.embedding[0], u2.embedding[1], u2.embedding[2], u2.embedding[3], u2.embedding[4], u2.embedding[5], 
+u2.embedding[6], u2.embedding[7], u2.embedding[8], u2.embedding[9], u2.embedding[10],
+u2.embedding[11], u2.embedding[12], u2.embedding[13], u2.embedding[14]] as u2_embedding
+with u1_agentid, u2_agentid, r, gds.alpha.similarity.pearson(u1_embedding, u2_embedding) as similarity 
+set r.score = similarity
+return u1_agentid , r.score, u2_agentid
+
+=================================
+# TEST
+=================================
+
+match (u1:Agent), (u2:Agent)
+with u1.agentid as u1_agentid, u1.embedding as u1_embedding, u2.agentid as u2_agentid, u2.embedding as u2_embedding,
+gds.alpha.similarity.cosine(u1.embedding, u2.embedding) as similarity limit 1000
+return u1_agentid, u1_embedding, u2_agentid, u2_embedding, similarity
+order by similarity desc
+
+
+match (u:Agent)
+where u.agentid = "44172668" or u.agentid = "26780853"
+return u
+
+
+//=================================
+// CALCULATE SIMILAR_EBD 
+//=================================
+MATCH (u1:Agent)
+WITH {item:id(u1), weights: [u1.embedding[0], u1.embedding[1], u1.embedding[2], u1.embedding[3], u1.embedding[4], u1.embedding[5], 
+u1.embedding[6], u1.embedding[7], u1.embedding[8], u1.embedding[9], u1.embedding[10],
+u1.embedding[11], u1.embedding[12], u1.embedding[13], u1.embedding[14]]} AS userData
+WITH collect(userData) AS data
+CALL gds.alpha.similarity.pearson.write({
+ writeRelationshipType: "SIMILAR_EBD",
+ data: data,
+ topK: 10,
+ similarityCutoff: -1})
+YIELD nodes, similarityPairs, writeRelationshipType, writeProperty, min, max, mean, stdDev, p25, p50, p75, p90, p95, p99, p999, p100
+RETURN nodes, similarityPairs, writeRelationshipType, writeProperty, min, max, mean, p95
+

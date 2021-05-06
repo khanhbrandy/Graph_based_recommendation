@@ -1,0 +1,82 @@
+//=================================
+//== LOAD USERS
+//=================================
+CALL apoc.periodic.iterate(
+"CALL apoc.load.csv('agent.csv', {skip:0, limit:90000, header:true,
+   mapping:{
+     agentid: {type:'string'},
+     in_degree: {type:'float'},
+     out_degree: {type:'float'},
+     page_rank: {type:'float'},
+     community_id: {type:'string'},
+     category: {type:'string'},
+     status: {type:'string'},
+     user_type: {type:'string'}     
+   }
+})
+yield map as row", 
+"MERGE (a:Agent {agentid: row.agentid})
+ ON CREATE SET  a.in_degree = row.in_degree,
+ a.out_degree = row.out_degree,
+ a.page_rank = row.page_rank,
+ a.community_id = row.community_id,
+ a.category = row.category,
+ a.status = row.status,
+ a.user_type = row.user_type"
+, {batchSize:100, iterateList:true, parallel:true})
+
+//=================================
+//== LOAD TRANSACTIONS
+//=================================
+
+LOAD CSV WITH HEADERS FROM 'file:///transaction_2.csv' AS row
+WITH row.u1_agentid AS u1_agentid,
+row.u1_reference as u1_reference,
+row.tranid AS tranid, 
+toFloat(row.amount) AS amount, 
+row.tran_type as tran_type,
+row.u2_agentid as u2_agentid,
+row.u2_reference as u2_reference
+MATCH (u1:Agent {agentid: u1_agentid})
+MATCH (u2:Agent {agentid: u2_agentid})
+MERGE (u1)-[rel:TRANSACTION {u1_reference: u1_reference, tranid : tranid , amount: amount, tran_type: tran_type, u2_reference:u2_reference}]->(u2)
+RETURN count(rel)
+
+
+=================================
+== LOAD PRODUCTS
+=================================
+
+LOAD CSV WITH HEADERS FROM 'file:///product.csv' AS row
+WITH row.product AS product
+MERGE (p:Product {product: product})
+  SET p.product = product
+RETURN count(p)
+
+
+
+
+
+
+
+********************************************************************************************************************************************************
+=================================
+== TEST LOAD TRANSACTION 
+=================================
+CALL apoc.periodic.iterate(
+"CALL apoc.load.csv('transaction.csv', {limit:210000, header:true,
+   mapping:{
+     u1_agentid: {type:'string'},
+     u1_reference: {type:'string'},
+     tranid: {type:'string'},
+     amount: {type:'float'},
+     tran_type: {type:'string'},
+     u2_agentid: {type:'string'},
+     u2_reference: {type:'string'}     
+   }
+})
+yield map as row", 
+"MATCH (u1:Agent {agentid: row.u1_agentid})
+MATCH (u2:Agent {agentid: row.u2_agentid})
+MERGE (u1)-[rel:TRANSACTION {u1_reference: row.u1_reference, tranid : row.tranid , amount: row.amount, tran_type: row.tran_type, u2_reference:row.u2_reference}]->(u2)"
+, {batchSize:100, iterateList:true, parallel:true})
